@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PCR Toolbar
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  PCR Toolbar enhancement script - Automates populating call times
 // @author       Your Name
 // @match        https://newjersey.imagetrendelite.com/Elite/Organizationnewjersey/Agencymartinsvil/EmsRunForm
@@ -312,32 +312,31 @@
      * Create the toolbar UI
      */
     function createToolbar() {
-        // Find the top-pane element
-        const topPane = document.getElementById('top-pane');
-        if (!topPane) {
-            console.error('Could not find #top-pane element');
-            return;
-        }
-
         // Create toolbar container
         const toolbar = document.createElement('div');
         toolbar.id = 'pcr-toolbar';
         toolbar.style.cssText = `
-            display: inline-flex;
-            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
             background-color: blue;
             color: white;
-            padding: 4px 8px;
-            margin-left: 8px;
-            gap: 8px;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 12px;
+            z-index: 10000;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         `;
 
         // Create incident number display
         incidentNumberSpan = document.createElement('span');
         incidentNumberSpan.style.cssText = `
             color: white;
-            font-size: 12px;
-            margin-right: 8px;
+            font-size: 14px;
+            font-weight: bold;
             display: none;
         `;
         toolbar.appendChild(incidentNumberSpan);
@@ -347,10 +346,14 @@
         timesBtn.textContent = 'Times';
         timesBtn.disabled = true;
         timesBtn.style.cssText = `
-            padding: 4px 8px;
+            padding: 6px 12px;
             font-size: 12px;
             cursor: not-allowed;
             opacity: 0.5;
+            border: 1px solid white;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 3px;
         `;
         timesBtn.addEventListener('click', handleTimesClick);
         toolbar.appendChild(timesBtn);
@@ -360,16 +363,23 @@
         addressBtn.textContent = 'Address';
         addressBtn.disabled = true;
         addressBtn.style.cssText = `
-            padding: 4px 8px;
+            padding: 6px 12px;
             font-size: 12px;
             cursor: not-allowed;
             opacity: 0.5;
+            border: 1px solid white;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 3px;
         `;
         addressBtn.addEventListener('click', handleAddressClick);
         toolbar.appendChild(addressBtn);
 
-        // Insert toolbar into top-pane (to the right of Close button)
-        topPane.appendChild(toolbar);
+        // Add toolbar to page
+        document.body.insertBefore(toolbar, document.body.firstChild);
+
+        // Adjust page content to account for fixed toolbar
+        document.body.style.paddingTop = '40px';
 
         console.log('PCR Toolbar created successfully');
 
