@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         PCR Toolbar
 // @namespace    http://tampermonkey.net/
-// @version      0.1.0
+// @version      1.1.0
 // @description  PCR Toolbar enhancement script - Automates populating call times
 // @author       Your Name
 // @match        https://newjersey.imagetrendelite.com/Elite/Organizationnewjersey/Agencymartinsvil/EmsRunForm
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=imagetrendelite.com
-// @updateURL    https://github.com/intellectcubed/tampermonkey_pcr_utils/blob/main/src/pcr_toolbar.user.js
-// @downloadURL  https://github.com/intellectcubed/tampermonkey_pcr_utils/blob/main/src/pcr_toolbar.user.js
-// @grant        none
+// @updateURL    https://raw.githubusercontent.com/intellectcubed/tampermonkey_pcr_utils/main/src/pcr_toolbar.user.js
+// @downloadURL  https://raw.githubusercontent.com/intellectcubed/tampermonkey_pcr_utils/main/src/pcr_toolbar.user.js
+// @grant        GM_getValue
+// @grant        GM_setValue
 // ==/UserScript==
 
 (function() {
@@ -55,15 +56,10 @@
         }
     };
 
-    // File input element for data files
-    let dataFileInput = null;
-
-    // Stored call times data
-    let callTimesData = null;
-
     // UI elements
-    let callTimesBtn = null;
-    let statusIndicator = null;
+    let timesBtn = null;
+    let addressBtn = null;
+    let incidentNumberSpan = null;
 
     /**
      * Sleep/delay function
@@ -195,264 +191,193 @@
     }
 
     /**
-     * Read and parse JSON file
-     * @param {File} file - The file to read
-     * @returns {Promise<object>}
+     * Get incident data from GM storage
+     * @returns {object|null}
      */
-    function readJsonFile(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-
-            reader.onload = (e) => {
-                try {
-                    const json = JSON.parse(e.target.result);
-                    resolve(json);
-                } catch (error) {
-                    reject(new Error(`Failed to parse JSON: ${error.message}`));
-                }
-            };
-
-            reader.onerror = () => {
-                reject(new Error('Failed to read file'));
-            };
-
-            reader.readAsText(file);
-        });
-    }
-
-    /**
-     * Handle Load Info button click
-     */
-    async function handleLoadInfoClick() {
+    function getIncidentData() {
         try {
-            showMessage('Select call times data file...', 'info');
-
-            const data = await new Promise((resolve, reject) => {
-                dataFileInput.onchange = async (e) => {
-                    try {
-                        const file = e.target.files[0];
-                        if (!file) {
-                            reject(new Error('No file selected'));
-                            return;
-                        }
-
-                        console.log('Loading call times data file...');
-                        const jsonData = await readJsonFile(file);
-                        console.log('Data loaded successfully', jsonData);
-                        resolve(jsonData);
-                    } catch (error) {
-                        console.error('Data load error:', error);
-                        reject(error);
-                    }
-                };
-
-                // Trigger file picker
-                dataFileInput.click();
-            });
-
-            // Store the loaded data
-            callTimesData = data;
-
-            // Enable Call Times button
-            callTimesBtn.disabled = false;
-            callTimesBtn.style.opacity = '1';
-            callTimesBtn.style.cursor = 'pointer';
-
-            // Update status indicator
-            statusIndicator.textContent = '✓ Data Loaded';
-            statusIndicator.style.display = 'inline-block';
-            statusIndicator.style.color = '#4CAF50';
-
-            showMessage('Call times data loaded successfully', 'success');
-
+            const jsonString = GM_getValue("incident_json");
+            if (!jsonString) {
+                return null;
+            }
+            return JSON.parse(jsonString);
         } catch (error) {
-            console.error('Error loading info:', error);
-            showMessage(`Error: ${error.message}`, 'error');
+            console.error('Error parsing incident_json:', error);
+            return null;
         }
     }
 
     /**
-     * Handle Call Times button click
+     * Check if we're on the Mileage/CAD/Times page
+     * @returns {boolean}
      */
-    async function handleCallTimesClick() {
+    function isOnTimesPage() {
+        const panelHeader = document.getElementById('panel-header');
+        if (!panelHeader) {
+            return false;
+        }
+        return panelHeader.textContent.trim() === 'Mileage / CAD / Times';
+    }
+
+    /**
+     * Update button states based on current page and data availability
+     */
+    function updateButtonStates() {
+        const incidentData = getIncidentData();
+        const onTimesPage = isOnTimesPage();
+        const shouldEnable = onTimesPage && incidentData !== null;
+
+        // Update Times button
+        if (timesBtn) {
+            timesBtn.disabled = !shouldEnable;
+            if (shouldEnable) {
+                timesBtn.style.opacity = '1';
+                timesBtn.style.cursor = 'pointer';
+            } else {
+                timesBtn.style.opacity = '0.5';
+                timesBtn.style.cursor = 'not-allowed';
+            }
+        }
+
+        // Update Address button
+        if (addressBtn) {
+            addressBtn.disabled = !shouldEnable;
+            if (shouldEnable) {
+                addressBtn.style.opacity = '1';
+                addressBtn.style.cursor = 'pointer';
+            } else {
+                addressBtn.style.opacity = '0.5';
+                addressBtn.style.cursor = 'not-allowed';
+            }
+        }
+
+        // Update incident number display
+        if (incidentNumberSpan) {
+            if (incidentData && incidentData.incidentNumber) {
+                incidentNumberSpan.textContent = incidentData.incidentNumber;
+                incidentNumberSpan.style.display = 'inline-block';
+            } else {
+                incidentNumberSpan.textContent = '';
+                incidentNumberSpan.style.display = 'none';
+            }
+        }
+    }
+
+    /**
+     * Handle Times button click
+     */
+    async function handleTimesClick() {
         try {
-            // Check if data is loaded
-            if (!callTimesData) {
-                showMessage('Please load call times data first', 'error');
+            // Get incident data
+            const incidentData = getIncidentData();
+            if (!incidentData) {
+                console.error('No incident data available');
                 return;
             }
 
-            // Navigate to the correct section
-            // TODO: Fix navigation - currently not working
-            // showMessage('Navigating to Mileage/CAD/Times section...', 'info');
-            // await navigateToMileageSection();
-
             // Populate fields
-            showMessage('Populating fields...', 'info');
-            const result = populateFields(callTimesData);
+            console.log('Populating time fields...');
+            const result = populateFields(incidentData);
 
-            // Show success message
-            if (result.failCount === 0) {
-                showMessage(`Successfully populated ${result.successCount} fields`, 'success');
-            } else {
-                showMessage(`Populated ${result.successCount} fields, ${result.failCount} failed`, 'warning');
-            }
+            console.log(`Population complete: ${result.successCount} succeeded, ${result.failCount} failed`);
 
         } catch (error) {
             console.error('Error:', error);
-            showMessage(`Error: ${error.message}`, 'error');
         }
     }
 
     /**
-     * Show a message to the user
-     * @param {string} message - The message to display
-     * @param {string} type - Message type: info, success, error, warning
+     * Handle Address button click
      */
-    function showMessage(message, type = 'info') {
-        const messageDiv = document.getElementById('pcr-toolbar-message');
-        if (!messageDiv) return;
+    async function handleAddressClick() {
+        try {
+            // Get incident data
+            const incidentData = getIncidentData();
+            if (!incidentData) {
+                console.error('No incident data available');
+                return;
+            }
 
-        const colors = {
-            info: '#2196F3',
-            success: '#4CAF50',
-            error: '#f44336',
-            warning: '#ff9800'
-        };
+            // TODO: Implement address population logic
+            console.log('Address button clicked - functionality to be implemented');
+            console.log('Incident data:', incidentData);
 
-        messageDiv.textContent = message;
-        messageDiv.style.backgroundColor = colors[type] || colors.info;
-        messageDiv.style.display = 'block';
-
-        // Auto-hide after 5 seconds for success/info messages
-        if (type === 'success' || type === 'info') {
-            setTimeout(() => {
-                messageDiv.style.display = 'none';
-            }, 5000);
+        } catch (error) {
+            console.error('Error:', error);
         }
     }
+
 
     /**
      * Create the toolbar UI
      */
     function createToolbar() {
+        // Find the top-pane element
+        const topPane = document.getElementById('top-pane');
+        if (!topPane) {
+            console.error('Could not find #top-pane element');
+            return;
+        }
+
         // Create toolbar container
         const toolbar = document.createElement('div');
         toolbar.id = 'pcr-toolbar';
         toolbar.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 37px;
-            background-color: #1976D2;
-            color: white;
-            display: flex;
+            display: inline-flex;
             align-items: center;
-            padding: 0 15px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-            z-index: 10000;
-            font-family: Arial, sans-serif;
-        `;
-
-        // Create toolbar title
-        const title = document.createElement('span');
-        title.textContent = 'PCR Toolbar';
-        title.style.cssText = `
-            font-weight: bold;
-            margin-right: 15px;
-            font-size: 12px;
-        `;
-        toolbar.appendChild(title);
-
-        // Create Load Info button
-        const loadInfoBtn = document.createElement('button');
-        loadInfoBtn.textContent = 'Load Info';
-        loadInfoBtn.style.cssText = `
-            background-color: #4CAF50;
+            background-color: blue;
             color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 11px;
-            font-weight: bold;
-            margin-right: 8px;
+            padding: 4px 8px;
+            margin-left: 8px;
+            gap: 8px;
         `;
-        loadInfoBtn.addEventListener('click', handleLoadInfoClick);
-        loadInfoBtn.addEventListener('mouseenter', () => {
-            loadInfoBtn.style.backgroundColor = '#66BB6A';
-        });
-        loadInfoBtn.addEventListener('mouseleave', () => {
-            loadInfoBtn.style.backgroundColor = '#4CAF50';
-        });
-        toolbar.appendChild(loadInfoBtn);
 
-        // Create Call Times button (initially disabled)
-        callTimesBtn = document.createElement('button');
-        callTimesBtn.textContent = 'Call Times';
-        callTimesBtn.disabled = true;
-        callTimesBtn.style.cssText = `
-            background-color: #FFC107;
-            color: #000;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 3px;
-            cursor: not-allowed;
-            font-size: 11px;
-            font-weight: bold;
+        // Create incident number display
+        incidentNumberSpan = document.createElement('span');
+        incidentNumberSpan.style.cssText = `
+            color: white;
+            font-size: 12px;
             margin-right: 8px;
+            display: none;
+        `;
+        toolbar.appendChild(incidentNumberSpan);
+
+        // Create Times button (initially disabled)
+        timesBtn = document.createElement('button');
+        timesBtn.textContent = 'Times';
+        timesBtn.disabled = true;
+        timesBtn.style.cssText = `
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: not-allowed;
             opacity: 0.5;
         `;
-        callTimesBtn.addEventListener('click', handleCallTimesClick);
-        callTimesBtn.addEventListener('mouseenter', () => {
-            if (!callTimesBtn.disabled) {
-                callTimesBtn.style.backgroundColor = '#FFD54F';
-            }
-        });
-        callTimesBtn.addEventListener('mouseleave', () => {
-            if (!callTimesBtn.disabled) {
-                callTimesBtn.style.backgroundColor = '#FFC107';
-            }
-        });
-        toolbar.appendChild(callTimesBtn);
+        timesBtn.addEventListener('click', handleTimesClick);
+        toolbar.appendChild(timesBtn);
 
-        // Create status indicator
-        statusIndicator = document.createElement('span');
-        statusIndicator.style.cssText = `
-            font-size: 11px;
-            font-weight: bold;
-            margin-left: 8px;
-            display: none;
+        // Create Address button (initially disabled)
+        addressBtn = document.createElement('button');
+        addressBtn.textContent = 'Address';
+        addressBtn.disabled = true;
+        addressBtn.style.cssText = `
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: not-allowed;
+            opacity: 0.5;
         `;
-        toolbar.appendChild(statusIndicator);
+        addressBtn.addEventListener('click', handleAddressClick);
+        toolbar.appendChild(addressBtn);
 
-        // Create message display area
-        const messageDiv = document.createElement('div');
-        messageDiv.id = 'pcr-toolbar-message';
-        messageDiv.style.cssText = `
-            margin-left: auto;
-            padding: 6px 12px;
-            border-radius: 3px;
-            font-size: 11px;
-            display: none;
-        `;
-        toolbar.appendChild(messageDiv);
-
-        // Create hidden file input for data files
-        dataFileInput = document.createElement('input');
-        dataFileInput.type = 'file';
-        dataFileInput.accept = '.json';
-        dataFileInput.style.display = 'none';
-
-        // Add to page
-        document.body.insertBefore(toolbar, document.body.firstChild);
-        document.body.appendChild(dataFileInput);
-
-        // Adjust page content to account for fixed toolbar
-        document.body.style.paddingTop = '37px';
+        // Insert toolbar into top-pane (to the right of Close button)
+        topPane.appendChild(toolbar);
 
         console.log('PCR Toolbar created successfully');
+
+        // Set up periodic checks for button state updates
+        setInterval(updateButtonStates, 1000);
+
+        // Initial button state update
+        updateButtonStates();
     }
 
     /**
