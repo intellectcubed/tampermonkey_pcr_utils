@@ -10,6 +10,7 @@
 // @downloadURL  https://raw.githubusercontent.com/intellectcubed/tampermonkey_pcr_utils/main/src/pcr_toolbar.user.js
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (function() {
@@ -53,6 +54,12 @@
                     "time": "819251Time"
                 }
             }
+        },
+        "incidentLocation": {
+            "location_name": "850922",
+            "street_address": "819256",
+            "apartment": "819258",
+            "zip_code": "819259"
         }
     };
 
@@ -191,18 +198,18 @@
     }
 
     /**
-     * Get incident data from GM storage
+     * Get incident data from unsafeWindow.EMSIncidentData (set by ems-incident-integration script)
      * @returns {object|null}
      */
     function getIncidentData() {
         try {
-            const jsonString = GM_getValue("incident_json");
-            if (!jsonString) {
-                return null;
+            // Read from unsafeWindow.EMSIncidentData which is set by ems-incident-integration.user.js
+            if (unsafeWindow.EMSIncidentData) {
+                return unsafeWindow.EMSIncidentData;
             }
-            return JSON.parse(jsonString);
+            return null;
         } catch (error) {
-            console.error('Error parsing incident_json:', error);
+            console.error('Error getting incident data:', error);
             return null;
         }
     }
@@ -220,17 +227,31 @@
     }
 
     /**
+     * Check if we're on the Incident Address page
+     * @returns {boolean}
+     */
+    function isOnAddressPage() {
+        const panelHeader = document.getElementById('panel-header');
+        if (!panelHeader) {
+            return false;
+        }
+        return panelHeader.textContent.trim() === 'Incident Address';
+    }
+
+    /**
      * Update button states based on current page and data availability
      */
     function updateButtonStates() {
         const incidentData = getIncidentData();
         const onTimesPage = isOnTimesPage();
-        const shouldEnable = onTimesPage && incidentData !== null;
+        const onAddressPage = isOnAddressPage();
+        const hasData = incidentData !== null;
 
-        // Update Times button
+        // Update Times button - only active on Times page
         if (timesBtn) {
-            timesBtn.disabled = !shouldEnable;
-            if (shouldEnable) {
+            const shouldEnableTimes = onTimesPage && hasData;
+            timesBtn.disabled = !shouldEnableTimes;
+            if (shouldEnableTimes) {
                 timesBtn.style.opacity = '1';
                 timesBtn.style.cursor = 'pointer';
             } else {
@@ -239,10 +260,11 @@
             }
         }
 
-        // Update Address button
+        // Update Address button - only active on Address page
         if (addressBtn) {
-            addressBtn.disabled = !shouldEnable;
-            if (shouldEnable) {
+            const shouldEnableAddress = onAddressPage && hasData;
+            addressBtn.disabled = !shouldEnableAddress;
+            if (shouldEnableAddress) {
                 addressBtn.style.opacity = '1';
                 addressBtn.style.cursor = 'pointer';
             } else {
@@ -298,13 +320,126 @@
                 return;
             }
 
-            // TODO: Implement address population logic
-            console.log('Address button clicked - functionality to be implemented');
-            console.log('Incident data:', incidentData);
+            if (!incidentData.incidentLocation) {
+                console.error('No incident location data available');
+                return;
+            }
+
+            console.log('Populating address fields...');
+            const location = incidentData.incidentLocation;
+            const mapping = fieldMapping.incidentLocation;
+            let successCount = 0;
+            let failCount = 0;
+
+            // Populate location_name if available
+            if (location.location_name && mapping.location_name) {
+                if (setFieldValue(mapping.location_name, location.location_name)) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            }
+
+            // Populate street_address if available
+            if (location.street_address && mapping.street_address) {
+                if (setFieldValue(mapping.street_address, location.street_address)) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            }
+
+            // Populate apartment if available
+            if (location.apartment && mapping.apartment) {
+                if (setFieldValue(mapping.apartment, location.apartment)) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            }
+
+            // Populate zip_code and trigger lookup button if available
+            if (location.zip_code && mapping.zip_code) {
+                if (setFieldValue(mapping.zip_code, location.zip_code)) {
+                    successCount++;
+
+                    // Wait a moment for the field to update, then click the lookup button
+                    await sleep(500);
+
+                    // Find and click the "Incident Address Postal Code Lookup" button
+                    const lookupButton = Array.from(document.querySelectorAll('button'))
+                        .find(btn => btn.textContent.trim() === 'Incident Address Postal Code Lookup');
+
+                    if (lookupButton) {
+                        lookupButton.click();
+                        console.log('Clicked "Incident Address Postal Code Lookup" button');
+                    } else {
+                        console.warn('Could not find "Incident Address Postal Code Lookup" button');
+                    }
+                } else {
+                    failCount++;
+                }
+            }
+
+            console.log(`Address population complete: ${successCount} succeeded, ${failCount} failed`);
 
         } catch (error) {
             console.error('Error:', error);
         }
+    }
+
+    /**
+     * Handle Debug button click
+     */
+    function handleDebugClick() {
+        console.log('=== PCR TOOLBAR DEBUG INFO ===');
+
+        // Check incident data
+        const incidentData = getIncidentData();
+        console.log('Incident Data exists:', incidentData !== null);
+        console.log('Incident Data:', incidentData);
+
+        // Check panel header
+        const panelHeader = document.getElementById('panel-header');
+        console.log('panel-header element found:', panelHeader !== null);
+        if (panelHeader) {
+            console.log('panel-header textContent:', `"${panelHeader.textContent}"`);
+            console.log('panel-header textContent (trimmed):', `"${panelHeader.textContent.trim()}"`);
+            console.log('panel-header innerHTML:', panelHeader.innerHTML);
+        } else {
+            // Try to find it by other means
+            console.log('Searching for elements that might be the header...');
+            const headers = document.querySelectorAll('h1, h2, h3, h4, h5, h6, [class*="header"], [class*="title"]');
+            headers.forEach((header, index) => {
+                const text = header.textContent.trim();
+                if (text.includes('Mileage') || text.includes('CAD') || text.includes('Times')) {
+                    console.log(`Possible header ${index}:`, {
+                        element: header.tagName,
+                        id: header.id,
+                        className: header.className,
+                        text: text
+                    });
+                }
+            });
+        }
+
+        // Check page state
+        const onTimesPage = isOnTimesPage();
+        console.log('isOnTimesPage():', onTimesPage);
+
+        // Check button states
+        console.log('Times button disabled:', timesBtn ? timesBtn.disabled : 'button not found');
+        console.log('Address button disabled:', addressBtn ? addressBtn.disabled : 'button not found');
+
+        // Check unsafeWindow.EMSIncidentData (shared across scripts)
+        console.log('unsafeWindow.EMSIncidentData exists:', unsafeWindow.EMSIncidentData !== undefined);
+        console.log('unsafeWindow.EMSIncidentData:', unsafeWindow.EMSIncidentData);
+
+        // Check GM storage raw value (for comparison - won't work across scripts)
+        const rawValue = GM_getValue("incident_json");
+        console.log('Raw GM_getValue("incident_json") [isolated to this script]:', rawValue);
+
+        console.log('=== END DEBUG INFO ===');
     }
 
 
@@ -374,6 +509,23 @@
         `;
         addressBtn.addEventListener('click', handleAddressClick);
         toolbar.appendChild(addressBtn);
+
+        // Create Debug button (always enabled)
+        const debugBtn = document.createElement('button');
+        debugBtn.textContent = 'Debug';
+        debugBtn.style.cssText = `
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 1;
+            border: 1px solid white;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: white;
+            border-radius: 3px;
+            margin-left: auto;
+        `;
+        debugBtn.addEventListener('click', handleDebugClick);
+        toolbar.appendChild(debugBtn);
 
         // Add toolbar to page
         document.body.insertBefore(toolbar, document.body.firstChild);
